@@ -28,6 +28,7 @@
 #include "vnode.h"
 #include "vnodeRead.h"
 #include "vnodeUtil.h"
+#pragma GCC diagnostic ignored "-Wint-conversion"
 
 void *      pShellServer = NULL;
 SShellObj **shellList = NULL;
@@ -51,7 +52,7 @@ void *vnodeProcessMsgFromShell(char *msg, void *ahandle, void *thandle) {
     if (pObj) {
       pObj->thandle = NULL;
       dTrace("QInfo:%p %s free qhandle", pObj->qhandle, __FUNCTION__);
-      vnodeFreeQInfo(pObj->qhandle, true);
+      vnodeFreeQInfoInQueue(pObj->qhandle);
       pObj->qhandle = NULL;
       vnodeList[pObj->vnode].shellConns--;
       dTrace("vid:%d, shell connection:%d is gone, shellConns:%d", pObj->vnode, pObj->sid,
@@ -113,7 +114,7 @@ int vnodeInitShell() {
   if (numOfThreads < 1) numOfThreads = 1;
 
   memset(&rpcInit, 0, sizeof(rpcInit));
-  rpcInit.localIp = tsInternalIp;
+  rpcInit.localIp = "0.0.0.0";
   rpcInit.localPort = tsVnodeShellPort;
   rpcInit.label = "DND-shell";
   rpcInit.numOfThreads = numOfThreads;
@@ -216,7 +217,6 @@ int vnodeSendShellSubmitRspMsg(SShellObj *pObj, int code, int numOfPoints) {
 
 int vnodeProcessQueryRequest(char *pMsg, int msgLen, SShellObj *pObj) {
   int                ret, code = 0;
-  SMeterObj *        pMeterObj = NULL;
   SQueryMeterMsg *   pQueryMsg;
   SMeterSidExtInfo **pSids = NULL;
   int32_t            incNumber = 0;

@@ -22,6 +22,8 @@
 #include "mgmt.h"
 #include "mgmtProfile.h"
 #include "tlog.h"
+#pragma GCC diagnostic ignored  "-Wint-conversion"
+#pragma GCC diagnostic ignored  "-Wpointer-sign"
 
 void *    pShellConn = NULL;
 SConnObj *connList;
@@ -54,7 +56,7 @@ int mgmtInitShell() {
   if (numOfThreads < 1) numOfThreads = 1;
 
   memset(&rpcInit, 0, sizeof(rpcInit));
-  rpcInit.localIp = tsInternalIp;
+  rpcInit.localIp = "0.0.0.0";
   rpcInit.localPort = tsMgmtShellPort;
   rpcInit.label = "MND-shell";
   rpcInit.numOfThreads = numOfThreads;
@@ -438,7 +440,7 @@ int mgmtProcessAlterUserMsg(char *pMsg, int msgLen, SConnObj *pConn) {
              (strcmp(pConn->pUser->user, "root") == 0)) {
     if ((pAlter->flag & TSDB_ALTER_USER_PASSWD) != 0) {
       memset(pUser->pass, 0, sizeof(pUser->pass));
-      strcpy(pUser->pass, pAlter->pass);
+      taosEncryptPass((uint8_t *)(pAlter->pass), strlen(pAlter->pass), pUser->pass);
     }
     if ((pAlter->flag & TSDB_ALTER_USER_PRIVILEGES) != 0) {
       if (pAlter->privilege == 1) {  // super

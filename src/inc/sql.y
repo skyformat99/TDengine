@@ -196,8 +196,8 @@ typename(A) ::= ids(X) LP signed(Y) RP.    {
     tSQLSetColumnType(&A, &X);
 }
 
-%type signed {int}
-signed(A) ::= INTEGER(X).         { A = atoi(X.z); }
+%type signed {int64_t}
+signed(A) ::= INTEGER(X).         { A = strtol(X.z, NULL, 10); }
 signed(A) ::= PLUS INTEGER(X).    { A = strtol(X.z, NULL, 10); }
 signed(A) ::= MINUS INTEGER(X).   { A = -strtol(X.z, NULL, 10);}
 
@@ -299,11 +299,6 @@ selcollist(A) ::= sclp(P) expr(X) as(Y).     {
 }
 
 selcollist(A) ::= sclp(P) STAR. {
-   tSQLExpr *pNode = tSQLExprIdValueCreate(NULL, TK_ALL);
-   A = tSQLExprListAppend(P, pNode, 0);
-}
-
-selcollist(A) ::= sclp(P) ID(X) DOT STAR. {
    tSQLExpr *pNode = tSQLExprIdValueCreate(NULL, TK_ALL);
    A = tSQLExprListAppend(P, pNode, 0);
 }
@@ -565,7 +560,7 @@ cmd ::= ALTER TABLE ids(X) cpxName(F) CHANGE TAG ids(Y) ids(Z). {
     setSQLInfo(pInfo, pAlterTable, NULL, ALTER_TABLE_TAGS_CHG);
 }
 
-cmd ::= ALTER TABLE ids(X) cpxName(F) SET ids(Y) EQ tagitem(Z).     {
+cmd ::= ALTER TABLE ids(X) cpxName(F) SET TAG ids(Y) EQ tagitem(Z).     {
     X.n += F.n;
 
     toTSDBType(Y.type);

@@ -14,7 +14,7 @@
  */
 
 #define _XOPEN_SOURCE
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 
 #include <assert.h>
 #include <pthread.h>
@@ -57,7 +57,7 @@ TAOS *shellInit(struct arguments *args) {
   }
 
   if (args->is_use_passwd) {
-    args->password = getpass("Enter password: ");
+    if (args->password == NULL) args->password = getpass("Enter password: ");
   } else {
     args->password = tsDefaultPass;
   }

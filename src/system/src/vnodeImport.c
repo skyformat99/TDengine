@@ -25,6 +25,8 @@
 #include "vnodeMgmt.h"
 #include "vnodeShell.h"
 #include "vnodeUtil.h"
+#pragma GCC diagnostic ignored "-Wpointer-sign"
+#pragma GCC diagnostic ignored "-Wint-conversion"
 
 typedef struct {
   SCompHeader *headList;
@@ -61,7 +63,6 @@ typedef struct {
   int     rows;
 } SImportInfo;
 
-#define EXTRA_BYTES 8
 int vnodeImportData(SMeterObj *pObj, SImportInfo *pImport);
 
 int vnodeGetImportStartPart(SMeterObj *pObj, char *payload, int rows, TSKEY key1) {
@@ -92,8 +93,7 @@ int vnodeCloseFileForImport(SMeterObj *pObj, SHeadInfo *pHinfo) {
   SVnodeCfg *pCfg = &pVnode->cfg;
   TSCKSUM    chksum = 0;
 
-  assert(pHinfo->newBlocks);
-  assert(pHinfo->compInfoOffset);
+  if (pHinfo->newBlocks == 0 || pHinfo->compInfoOffset == 0) return 0;
 
   if (pHinfo->oldNumOfBlocks == 0) write(pVnode->nfd, &chksum, sizeof(TSCKSUM));
 
@@ -623,6 +623,9 @@ int vnodeFindKeyInFile(SImportInfo *pImport, int order) {
 
   for (int16_t i = 0; i < pObj->numOfColumns; ++i) {
     colList[i].data.colId = pObj->schema[i].colId;
+    colList[i].data.bytes = pObj->schema[i].bytes;
+    colList[i].data.type = pObj->schema[i].type;
+
     colList[i].colIdx = i;
     colList[i].colIdxInBuf = i;
   }

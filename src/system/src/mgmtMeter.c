@@ -516,7 +516,6 @@ int mgmtCreateMeter(SDbObj *pDb, SCreateTableMsg *pCreate) {
   STabObj * pMetric = NULL;
   SVgObj *  pVgroup = NULL;
   int       size = 0;
-  SAcctObj *pAcct = NULL;
 
   int numOfTables = sdbGetNumOfRows(meterSdb);
   if (numOfTables >= tsMaxTables) {
@@ -1622,7 +1621,7 @@ int32_t mgmtMeterModifyTagNameByCol(STabObj *pMetric, uint32_t col, const char *
     return TSDB_CODE_APP_ERROR;
   }
 
-  mError("Succeed to modify table %s tag column", pMetric->meterId);
+  mTrace("Succeed to modify table %s tag column", pMetric->meterId);
   return TSDB_CODE_SUCCESS;
 }
 

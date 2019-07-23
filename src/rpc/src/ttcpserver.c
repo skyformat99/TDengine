@@ -38,6 +38,9 @@
 #include "tutil.h"
 
 #define TAOS_IPv4ADDR_LEN 16
+#ifndef EPOLLWAKEUP
+  #define EPOLLWAKEUP (1u << 29)
+#endif
 
 typedef struct _fd_obj {
   int                 fd;       // TCP socket FD
@@ -199,6 +202,7 @@ static void taosProcessTcpData(void *param) {
       if (headLen != sizeof(STaosHeader)) {
         tError("%s read error, headLen:%d", pThreadObj->label, headLen);
         taosCleanUpFdObj(pFdObj);
+        tfree(buffer);
         continue;
       }
 
@@ -214,6 +218,7 @@ static void taosProcessTcpData(void *param) {
       if (leftLen != retLen) {
         tError("%s read error, leftLen:%d retLen:%d", pThreadObj->label, leftLen, retLen);
         taosCleanUpFdObj(pFdObj);
+        tfree(buffer);
         continue;
       }
 
@@ -276,12 +281,7 @@ void taosAcceptTcpConnection(void *arg) {
     pFdObj->port = htons(clientAddr.sin_port);
     pFdObj->pThreadObj = pThreadObj;
 
-// add this new FD into epoll
-#ifndef _NINGSI_VERSION
     event.events = EPOLLIN | EPOLLPRI | EPOLLWAKEUP;
-#else
-    event.events = EPOLLIN | EPOLLPRI;
-#endif
     event.data.ptr = pFdObj;
     if (epoll_ctl(pThreadObj->pollFd, EPOLL_CTL_ADD, connFd, &event) < 0) {
       tError("%s failed to add TCP FD for epoll, error:%s", pServerObj->label, strerror(errno));
@@ -354,12 +354,7 @@ void taosAcceptUDConnection(void *arg) {
     pFdObj->fd = connFd;
     pFdObj->pThreadObj = pThreadObj;
 
-// add this new FD into epoll
-#ifndef _NINGSI_VERSION
     event.events = EPOLLIN | EPOLLPRI | EPOLLWAKEUP;
-#else
-    event.events = EPOLLIN | EPOLLPRI;
-#endif
     event.data.ptr = pFdObj;
     if (epoll_ctl(pThreadObj->pollFd, EPOLL_CTL_ADD, connFd, &event) < 0) {
       tError("%s failed to add UD FD for epoll, error:%s", pServerObj->label, strerror(errno));

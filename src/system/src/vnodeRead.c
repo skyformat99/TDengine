@@ -25,6 +25,7 @@
 #include "vnode.h"
 #include "vnodeRead.h"
 #include "vnodeUtil.h"
+#pragma GCC diagnostic ignored "-Wint-conversion"
 
 int (*pQueryFunc[])(SMeterObj *, SQuery *) = {vnodeQueryFromCache, vnodeQueryFromFile};
 
@@ -215,7 +216,7 @@ static SQInfo *vnodeAllocateQInfoCommon(SQueryMeterMsg *pQueryMsg, SMeterObj *pM
 
   pQuery->pSelectExpr = pExprs;
 
-  int32_t ret = vnodeCreateFilterInfo(pQuery);
+  int32_t ret = vnodeCreateFilterInfo(pQInfo, pQuery);
   if (ret != TSDB_CODE_SUCCESS) {
     goto _clean_memory;
   }
@@ -506,7 +507,6 @@ void vnodeQueryData(SSchedMsg *pMsg) {
   pQuery->pointsToRead = vnodeList[pObj->vnode].cfg.rowsInFileBlock;
   pQuery->pointsOffset = pQInfo->bufIndex * pQuery->pointsToRead;
 
-  // dTrace("id:%s, start to query data", pQInfo->pObj->meterId);
   int64_t st = taosGetTimestampUs();
 
   while (1) {
@@ -592,10 +592,8 @@ void *vnodeQueryInTimeRange(SMeterObj **pMetersObj, SSqlGroupbyExpr *pGroupbyExp
   pQuery = &(pQInfo->query);
   dTrace("qmsg:%p create QInfo:%p, QInfo created", pQueryMsg, pQInfo);
 
-  pQuery->order.order = pQueryMsg->order;
   pQuery->skey = pQueryMsg->skey;
   pQuery->ekey = pQueryMsg->ekey;
-
   pQuery->lastKey = pQuery->skey;
 
   pQInfo->fp = pQueryFunc[pQueryMsg->order];
@@ -679,7 +677,6 @@ void *vnodeQueryOnMultiMeters(SMeterObj **pMetersObj, SSqlGroupbyExpr *pGroupbyE
   pQuery = &(pQInfo->query);
   dTrace("qmsg:%p create QInfo:%p, QInfo created", pQueryMsg, pQInfo);
 
-  pQuery->order.order = pQueryMsg->order;
   pQuery->skey = pQueryMsg->skey;
   pQuery->ekey = pQueryMsg->ekey;
 

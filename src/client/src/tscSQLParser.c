@@ -14,7 +14,7 @@
  */
 
 #define _XOPEN_SOURCE
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +35,7 @@
 #include "tschemautil.h"
 #include "tsclient.h"
 #include "tsql.h"
+#pragma GCC diagnostic ignored "-Wunused-variable"
 
 typedef struct SColumnIdList {
   SSchema* pSchema;
@@ -205,6 +206,9 @@ int32_t tscToSQLCmd(SSqlObj* pSql, struct SSqlInfo* pInfo) {
       pCmd->command = TSDB_SQL_USE_DB;
 
       SSQLToken* pToken = &pInfo->pDCLInfo->a[0];
+	  
+	  tscValidateName(pToken);
+	  
       if (pToken->n > TSDB_DB_NAME_LEN) {
         setErrMsg(pCmd, msg, tListLen(msg));
         return TSDB_CODE_INVALID_SQL;
@@ -389,6 +393,8 @@ int32_t tscToSQLCmd(SSqlObj* pSql, struct SSqlInfo* pInfo) {
       SSQLToken* pToken = &pInfo->pDCLInfo->a[0];
       char       msg[] = "table name is too long";
 
+	  tscValidateName(pToken);
+	  
       if (pToken->n > TSDB_METER_NAME_LEN) {
         setErrMsg(pCmd, msg, tListLen(msg));
         return TSDB_CODE_INVALID_SQL;
@@ -564,6 +570,9 @@ int32_t tscToSQLCmd(SSqlObj* pSql, struct SSqlInfo* pInfo) {
       // table name
       // metric name, create table by using dst
       SSQLToken* pToken = &(pInfo->pCreateTableInfo->usingInfo.metricName);
+
+      tscValidateName(pToken);
+
       int32_t    ret = setMeterID(pSql, pToken);
       if (ret != TSDB_CODE_SUCCESS) {
         return ret;
@@ -730,7 +739,8 @@ int32_t tscToSQLCmd(SSqlObj* pSql, struct SSqlInfo* pInfo) {
         return TSDB_CODE_INVALID_SQL;
       }
 
-      strdequote(pQuerySql->from.z);
+	  tscValidateName(&(pQuerySql->from));
+	  
       if (setMeterID(pSql, &pQuerySql->from) != TSDB_CODE_SUCCESS) {
         char msg[] = "table name too long";
         setErrMsg(pCmd, msg, tListLen(msg));
@@ -1344,7 +1354,7 @@ int32_t buildSelectionClause(SSqlCmd* pCmd, tSQLExprList* pSelection, bool isMet
   char msg1[] = "invalid column name/illegal column type in arithmetic expression";
   char msg2[] = "functions can not be mixed up";
   char msg3[] = "not support query expression";
-  char msg4[] = "function not support in stable query";
+  char msg4[] = "function not support in STable query";
 
   SSchema* pSchema = tsGetSchema(pCmd->pMeterMeta);
 
@@ -1585,7 +1595,7 @@ static int32_t setExprInfoForFunctions(SSqlCmd* pCmd, SSchema* pSchema, int32_t 
   int16_t type = 0;
   int16_t bytes = 0;
 
-  char columnName[TSDB_COL_NAME_LEN + 1] = {0};
+  char columnName[TSDB_COL_NAME_LEN] = {0};
   char msg1[] = "not support column types";
 
   if (functionID == TSDB_FUNC_SPREAD) {
@@ -2284,7 +2294,7 @@ int32_t setGroupByClause(SSqlCmd* pCmd, tVariantList* pList) {
   char msg1[] = "too many columns in group by clause";
   char msg2[] = "invalid column name in group by clause";
   char msg3[] = "functions are not available in group by query";
-  char msg4[] = "group by only available for stable query";
+  char msg4[] = "group by only available for STable query";
 
   if (UTIL_METER_IS_NOMRAL_METER(pCmd)) {
     if (pList == NULL) {
@@ -3054,6 +3064,29 @@ static int32_t setMetersIDForMetricQuery(SSqlObj* pSql, char* tmpTagCondBuf) {
   return TSDB_CODE_SUCCESS;
 }
 
+static bool validateFilterExpr(SSqlCmd* pCmd) {
+  for (int32_t i = 0; i < pCmd->colList.numOfCols; ++i) {
+    SColumnBase* pColBase = &pCmd->colList.pColList[i];
+
+    if (pColBase->filterOn > 0) {
+      int32_t lowerOptr = pColBase->lowerRelOptr;
+      int32_t upperOptr = pColBase->upperRelOptr;
+
+      if ((lowerOptr == TSDB_RELATION_LARGE_EQUAL || lowerOptr == TSDB_RELATION_LARGE) &&
+          (upperOptr == TSDB_RELATION_LESS_EQUAL || upperOptr == TSDB_RELATION_LESS)) {
+        continue;
+      }
+
+      // there must be at least two range, not support yet.
+      if (lowerOptr * upperOptr != TSDB_RELATION_INVALID) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 int32_t buildQueryCond(SSqlObj* pSql, tSQLExpr* pExpr) {
   SSqlCmd* pCmd = &pSql->cmd;
 
@@ -3063,6 +3096,7 @@ int32_t buildQueryCond(SSqlObj* pSql, tSQLExpr* pExpr) {
 
   char msg1[] = "invalid expression";
   char msg2[] = "meter is not allowed";
+  char msg3[] = "invalid filter expression";
 
   tSQLExpr* pLeft = pExpr->pLeft;
   tSQLExpr* pRight = pExpr->pRight;
@@ -3109,6 +3143,11 @@ int32_t buildQueryCond(SSqlObj* pSql, tSQLExpr* pExpr) {
     }
 
     pCmd->tagCond.pData[pCmd->tagCond.len] = 0;
+  }
+
+  if (!validateFilterExpr(pCmd)) {
+    setErrMsg(pCmd, msg3, tListLen(msg3));
+    return TSDB_CODE_INVALID_SQL;
   }
 
   return ret;
@@ -3438,6 +3477,8 @@ int32_t setAlterTableInfo(SSqlObj* pSql, struct SSqlInfo* pInfo) {
   SAlterTableSQL* pAlterSQL = pInfo->pAlterInfo;
   pCmd->command = TSDB_SQL_ALTER_TABLE;
 
+  tscValidateName(&(pAlterSQL->name));
+
   if (setMeterID(pSql, &(pAlterSQL->name)) != TSDB_CODE_SUCCESS) {
     char msg[] = "table name too long";
     setErrMsg(pCmd, msg, tListLen(msg));
@@ -3540,20 +3581,27 @@ int32_t setAlterTableInfo(SSqlObj* pSql, struct SSqlInfo* pInfo) {
     pCmd->numOfCols = 1;  // only one column
 
   } else if (pInfo->sqlType == ALTER_TABLE_TAGS_CHG) {
+    char msg1[] = "tag name too long";
+    char msg2[] = "invalid tag name";
+
     pCmd->count = TSDB_ALTER_TABLE_CHANGE_TAG_COLUMN;
     tVariantList* pVarList = pAlterSQL->varList;
     if (pVarList->nExpr > 2) {
       return TSDB_CODE_INVALID_SQL;
     }
 
-    if (pVarList->a[0].pVar.nLen > TSDB_COL_NAME_LEN || pVarList->a[1].pVar.nLen > TSDB_COL_NAME_LEN) {
-      char msg[] = "tag name too long";
-      setErrMsg(pCmd, msg, tListLen(msg));
+    tVariantListItem* pSrcItem = &pAlterSQL->varList->a[0];
+    tVariantListItem* pDstItem = &pAlterSQL->varList->a[1];
+
+    if (pSrcItem->pVar.nLen >= TSDB_COL_NAME_LEN || pDstItem->pVar.nLen >= TSDB_COL_NAME_LEN) {
+      setErrMsg(pCmd, msg1, tListLen(msg1));
       return TSDB_CODE_INVALID_SQL;
     }
 
-    tVariantListItem* pSrcItem = &pAlterSQL->varList->a[0];
-    tVariantListItem* pDstItem = &pAlterSQL->varList->a[1];
+    if (pSrcItem->pVar.nType != TSDB_DATA_TYPE_BINARY || pDstItem->pVar.nType != TSDB_DATA_TYPE_BINARY) {
+      setErrMsg(pCmd, msg2, tListLen(msg2));
+      return TSDB_CODE_INVALID_SQL;
+    }
 
     bool srcFound = false;
     bool dstFound = false;
@@ -3562,11 +3610,12 @@ int32_t setAlterTableInfo(SSqlObj* pSql, struct SSqlInfo* pInfo) {
       char*   tagName = pSchema[tagIdx].name;
 
       size_t nameLen = strlen(tagName);
-      if ((!srcFound) && strncasecmp(tagName, pSrcItem->pVar.pz, nameLen) == 0) {
+      if ((!srcFound) && (strncasecmp(tagName, pSrcItem->pVar.pz, nameLen) == 0 && (pSrcItem->pVar.nLen == nameLen))) {
         srcFound = true;
       }
 
-      if ((!dstFound) && strncasecmp(tagName, pDstItem->pVar.pz, nameLen) == 0) {
+      //todo extract method
+      if ((!dstFound) && (strncasecmp(tagName, pDstItem->pVar.pz, nameLen) == 0 && (pDstItem->pVar.nLen == nameLen))) {
         dstFound = true;
       }
     }
@@ -3840,7 +3889,7 @@ int32_t setLimitOffsetValueInfo(SSqlObj* pSql, SQuerySQL* pQuerySql) {
 
   char msg0[] = "soffset can not be less than 0";
   char msg1[] = "offset can not be less than 0";
-  char msg2[] = "slimit/soffset only available for stable query";
+  char msg2[] = "slimit/soffset only available for STable query";
   char msg3[] = "function not supported on table";
 
   // handle the limit offset value, validate the limit
@@ -3949,7 +3998,8 @@ int32_t parseCreateDBOptions(SCreateDBInfo* pCreateDbSql, SSqlCmd* pCmd) {
 
   if (pCreateDbSql->keep != NULL) {
     switch (pCreateDbSql->keep->nExpr) {
-      case 1:pMsg->daysToKeep = htonl(pCreateDbSql->keep->a[0].pVar.i64Key);
+      case 1:
+        pMsg->daysToKeep = htonl(pCreateDbSql->keep->a[0].pVar.i64Key);
         break;
       case 2: {
         pMsg->daysToKeep = htonl(pCreateDbSql->keep->a[0].pVar.i64Key);

@@ -72,7 +72,7 @@ int tsCacheBlockSize = 16384;  // 256 columns
 int tsAverageCacheBlocks = 4;
 
 int   tsRowsInFileBlock = 4096;
-float tsFileBlockMinPercent = 0.25;
+float tsFileBlockMinPercent = 0.05;
 
 short tsNumOfBlocksPerMeter = 100;
 int   tsCommitTime = 3600;  // seconds
@@ -98,6 +98,7 @@ int  tsMaxVnodeConnections = 10000;
 
 int tsEnableHttpModule = 1;
 int tsEnableMonitorModule = 1;
+int tsRestRowLimit = 10240;
 
 int tsTimePrecision = TSDB_TIME_PRECISION_MILLI;  // time precision, millisecond by default
 int tsMinSlidingTime = 10;                        // 10 ms for sliding time, the value will changed in
@@ -667,10 +668,6 @@ bool tsReadGlobalConfig() {
     taosGetPrivateIp(tsInternalIp);
   }
 
-  if (tsLocalIp[0] == 0) {
-    strcpy(tsLocalIp, tsInternalIp);
-  }
-
   taosGetSystemInfo();
 
   tsSetLocale();
@@ -682,10 +679,6 @@ bool tsReadGlobalConfig() {
 
   if (tsNumOfCores <= 0) {
     tsNumOfCores = 1;
-  }
-
-  if (tscEmbedded) {
-    strcpy(tsLocalIp, tsInternalIp);
   }
 
   tsVersion = 0;
@@ -787,6 +780,7 @@ void tsPrintGlobalConfig() {
     }
   }
 
+  pPrint(" dataDir:                %s", dataDir);
   tsPrintOsInfo();
 
   pPrint("==================================");
