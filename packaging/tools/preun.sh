@@ -8,6 +8,7 @@ NC='\033[0m'
 
 bin_link_dir="/usr/bin"
 lib_link_dir="/usr/lib"
+lib64_link_dir="/usr/lib64"
 inc_link_dir="/usr/include"
 
 data_link_dir="/usr/local/taos/data"
@@ -19,52 +20,97 @@ taos_service_name="taosd"
 
 csudo=""
 if command -v sudo > /dev/null; then
-    csudo="sudo"
+    csudo="sudo "
 fi
 
-function is_using_systemd() {
-    if pidof systemd &> /dev/null; then
-        return 0
+initd_mod=0
+service_mod=2
+if pidof systemd &> /dev/null; then
+    service_mod=0
+elif $(which service &> /dev/null); then
+    service_mod=1
+    service_config_dir="/etc/init.d"
+    if $(which chkconfig &> /dev/null); then
+         initd_mod=1
+    elif $(which insserv &> /dev/null); then
+        initd_mod=2
+    elif $(which update-rc.d &> /dev/null); then
+        initd_mod=3
     else
-        return 1
+        service_mod=2
     fi
+else
+    service_mod=2
+fi
+
+function kill_taosadapter() {
+  pid=$(ps -ef | grep "taosadapter" | grep -v "grep" | awk '{print $2}')
+  if [ -n "$pid" ]; then
+    ${csudo}kill -9 $pid   || :
+  fi
 }
 
-if ! is_using_systemd; then
-    service_config_dir="/etc/init.d"
-fi
+function kill_taosd() {
+  pid=$(ps -ef | grep "taosd" | grep -v "grep" | awk '{print $2}')
+  if [ -n "$pid" ]; then
+    ${csudo}kill -9 $pid   || :
+  fi
+}
 
 function clean_service_on_systemd() {
+    taosadapter_service_config="${service_config_dir}/taosadapter.service"
+    if systemctl is-active --quiet taosadapter; then
+        echo "taosadapter is running, stopping it..."
+        ${csudo}systemctl stop taosadapter &> /dev/null || echo &> /dev/null
+    fi
+
     taosd_service_config="${service_config_dir}/${taos_service_name}.service"
 
     if systemctl is-active --quiet ${taos_service_name}; then
         echo "TDengine taosd is running, stopping it..."
-        ${csudo} systemctl stop ${taos_service_name} &> /dev/null || echo &> /dev/null
+        ${csudo}systemctl stop ${taos_service_name} &> /dev/null || echo &> /dev/null
     fi
-    ${csudo} systemctl disable ${taos_service_name} &> /dev/null || echo &> /dev/null
+    ${csudo}systemctl disable ${taos_service_name} &> /dev/null || echo &> /dev/null
 
-    ${csudo} rm -f ${taosd_service_config}	
+    ${csudo}rm -f ${taosd_service_config}
+
+    [ -f ${taosadapter_service_config} ] && ${csudo}rm -f ${taosadapter_service_config}
+
 }
 
 function clean_service_on_sysvinit() {
-    restart_config_str="taos:2345:respawn:${service_config_dir}/taosd start"
+    #restart_config_str="taos:2345:respawn:${service_config_dir}/taosd start"
+    #${csudo}sed -i "\|${restart_config_str}|d" /etc/inittab || :
 
     if pidof taosd &> /dev/null; then
         echo "TDengine taosd is running, stopping it..."
-        ${csudo} service taosd stop || :
+        ${csudo}service taosd stop || :
     fi
 
-    ${csudo} sed -i "\|${restart_config_str}|d" /etc/inittab || :
-    ${csudo} rm -f ${service_config_dir}/taosd || :
-    ${csudo} update-rc.d -f taosd remove || :
-    ${csudo} init q || :
+    if ((${initd_mod}==1)); then
+        ${csudo}chkconfig --del taosd || :
+    elif ((${initd_mod}==2)); then
+        ${csudo}insserv -r taosd || :
+    elif ((${initd_mod}==3)); then
+        ${csudo}update-rc.d -f taosd remove || :
+    fi
+
+    ${csudo}rm -f ${service_config_dir}/taosd || :
+
+    if $(which init &> /dev/null); then
+        ${csudo}init q || :
+    fi
 }
 
 function clean_service() {
-    if is_using_systemd; then
+    if ((${service_mod}==0)); then
         clean_service_on_systemd
-    else
+    elif ((${service_mod}==1)); then
         clean_service_on_sysvinit
+    else
+        # must manual stop taosd
+        kill_taosadapter
+        kill_taosd
     fi
 }
 
@@ -72,14 +118,26 @@ function clean_service() {
 clean_service
 
 # Remove all links
-${csudo} rm -f ${bin_link_dir}/taos       || :
-${csudo} rm -f ${bin_link_dir}/taosd      || :
-${csudo} rm -f ${bin_link_dir}/taosdump   || :
-${csudo} rm -f ${cfg_link_dir}/*          || :
-${csudo} rm -f ${inc_link_dir}/taos.h     || :
-${csudo} rm -f ${lib_link_dir}/libtaos.*  || :
+${csudo}rm -f ${bin_link_dir}/taos       || :
+${csudo}rm -f ${bin_link_dir}/taosd      || :
+${csudo}rm -f ${bin_link_dir}/taosadapter       || :
+${csudo}rm -f ${bin_link_dir}/taosBenchmark || :
+${csudo}rm -f ${bin_link_dir}/taosdemo   || :
+${csudo}rm -f ${bin_link_dir}/set_core   || :
+${csudo}rm -f ${cfg_link_dir}/*.new      || :
+${csudo}rm -f ${inc_link_dir}/taos.h     || :
+${csudo}rm -f ${inc_link_dir}/taosdef.h  || :
+${csudo}rm -f ${inc_link_dir}/taoserror.h || :
+${csudo}rm -f ${inc_link_dir}/taosudf.h || :
+${csudo}rm -f ${lib_link_dir}/libtaos.*   || :
+${csudo}rm -f ${lib64_link_dir}/libtaos.* || :
 
-${csudo} rm -f ${log_link_dir}            || :
-${csudo} rm -f ${data_link_dir}           || :
+${csudo}rm -f ${log_link_dir}            || :
+${csudo}rm -f ${data_link_dir}           || :
 
-echo -e "${GREEN}TDEngine is removed successfully!${NC}"
+if ((${service_mod}==2)); then
+    kill_taosadapter
+    kill_taosd
+fi
+
+echo -e "${GREEN}TDengine is removed successfully!${NC}"
